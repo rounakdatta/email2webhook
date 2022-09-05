@@ -1,14 +1,20 @@
 #!/usr/bin/env node
 
 /**
- * Slack Email Webhook
+ * Email2Webhook
  *
- * Get notifications in Slack for received and sent mail.
+ * Ship received emails to a webhook endpoint.
  * Written in ES2015 and with async/await from ES2017.
  *
+ * Originally by
  * Nick Schwarzenberg
  * nick@bitfasching.de
  * v0.1.2, 04/2017
+ *
+ * Modified by
+ * Rounak Datta
+ * rounakdatta12@gmail.com
+ * v0.2.0 09/2022
  *
  * License: AGPLv3
  */
@@ -30,6 +36,7 @@ const config = require( process.env.CONFIG || './config.js' )
 
 // overwrite mailbox setting if set as environment variable
 config.mailbox = process.env.MAILBOX || config.mailbox
+process.env.NODE_TLS_REJECT_UNAUTHORIZED='0';
 
 // parse webhook URL only once
 config.webhookURL = URL.parse( config.webhookURL )
@@ -87,7 +94,7 @@ async function main()
     if ( config.fetchUnread )
     {
         // get sequence numbers of unread mails
-        const unreadMails = await client.search( config.mailbox, { unseen: true } )
+        const unreadMails = await client.search( config.mailbox, { recent: true, unseen: true } )
 
         // any unread mails?
         if ( unreadMails && unreadMails.length > 0 )
@@ -225,25 +232,25 @@ async function queryMailbox( client )
 // fetch mails by sequence numbers
 async function fetchMails( client, ids, removeSeen )
 {
-    // notifications to send to Slack
+    // notifications to be sent to webhook
     let notifications = []
 
     // for each sequence number…
     for ( let id of ids )
     {
-        // try to fetch the mail and turn it into a Slack notification
+        // try to fetch the mail and turn it into a packaged notification
         const notification = await mailToNotification( client, id )
 
         // add to list of new notifications if successful
         notification && notifications.push( notification )
     }
 
-    // send notifications to Slack if any
-    sendToSlack( notifications )
+    // send notifications to the configured webhook if any
+    sendToWebhook( notifications )
 }
 
 
-// fetch mail by its sequence number, parse and turn into a Slack notification
+// fetch mail by its sequence number, parse and turn into a packaged notification
 async function mailToNotification( client, id )
 {
     // processed header, unprocessed body
@@ -283,7 +290,7 @@ async function mailToNotification( client, id )
         console.error( error )
     }
 
-    // create Slack notification with common content
+    // create notification with common content
     const notification = {
         title: header.subject,
         text: content || "_Sorry, no text available._",
@@ -358,8 +365,8 @@ function findTextContent( parts )
 }
 
 
-// send an array of one or more notifications to a Slack webhook
-function sendToSlack( notifications )
+// send an array of one or more notifications to the configured webhook
+function sendToWebhook( notifications )
 {
     // return if no notifications to send
     if ( notifications.length == 0 ) return
@@ -383,19 +390,19 @@ function sendToSlack( notifications )
 
     return new Promise( ( resolve, reject ) =>
     {
-        // start request to Slack
+        // start request to webhook endpoint
         const request = HTTPS.request( postParameters, ( response ) =>
         {
             // check status code
             if ( response.statusCode == 200 )
             {
                 // all good
-                console.log( "Sent %d notification(s) to Slack.", notifications.length )
+                console.log( "Sent %d notification(s) to Webhook.", notifications.length )
             }
             else
             {
                 // log error, but don't do anything about it
-                console.error( "Slack returned unexpected status code %d.", response.statusCode )
+                console.error( "Webhook endpoint returned unexpected status code %d.", response.statusCode )
             }
 
             // resolve Promise regardless of possible errors
